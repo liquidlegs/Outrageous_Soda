@@ -2,6 +2,7 @@ use clap::Parser;
 use std::io::{Write, BufReader, BufRead, Error as IoError, ErrorKind};
 use std::fs::OpenOptions;
 use std::thread;
+use std::thread::JoinHandle;
 use core::time::Duration;
 use reqwest;
 use reqwest::Error;
@@ -11,6 +12,8 @@ use reqwest::blocking::Response;
 pub const LARGE_FILE: usize = 1000000;
 pub static F_HTTP: &str = "http://";
 pub static F_HTTPS: &str = "https://";
+pub const WIN_NEW_LINE: &str = "\r\n";
+pub const LNX_NEW_LINE: &str = "\n";
 
 #[derive(Debug, Parser)]
 #[clap(author, version, about)]
@@ -44,8 +47,8 @@ pub struct SodaArgs {
   pub timeout: u64,
 
   /// Threads
-  #[clap(short = 'T', long, default_value = "0", value_name = "INT", help = "The number of threads you wish to use to process requests")]
-  pub threads: u32,
+  #[clap(short = 'T', long, default_value = "10", value_name = "INT", help = "The number of threads you wish to use to process requests")]
+  pub threads: usize,
 }
 
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq)]
@@ -138,7 +141,7 @@ impl SodaArgs {
       for i in slices {
         request.push_str(i);
 
-        match Self::get(request.as_str(), timeout) {    // Sends the GET reuqest.
+        match Self::get(request.as_str(), timeout) {                 // Sends the GET reuqest.
           Ok(s) => {
             let status = s.status();
             if status.is_success() && debug == false {
@@ -148,7 +151,7 @@ impl SodaArgs {
             if debug == true {                                           // Enable debugging to print everything.
               println!("{} -- {}", request, status);
               
-              if verbose == true {                                     // Enable this flag to get the html body.
+              if verbose == true {                                       // Enable this flag to get the html body.
                 match s.text() {
                   Ok(body) => {
                     println!("|\n|\n{}", body);
@@ -290,31 +293,74 @@ impl SodaArgs {
    * Returns nothing.
    */
   pub fn fuzz_directory(&self) -> () {
+    let mut pattern = "";
+    
     let file_contents = self.parse_wordlist();                      // Gets the contents of the wordlist
     if file_contents.1 >= LARGE_FILE {
       println!("Wanring: word list is larger than 50MB. Performance may be slow...");
     }
+
+    // The next 30 lines from here works whether the text file using the windows \r\n new line or the linux \n new line
+    let mut win_test_string = String::new();
+    let mut lnx_test_string = String::new();
+    if file_contents.1 < 256 {
+      win_test_string.push_str(&file_contents.0[0..file_contents.1]);                     // Creates a string slice smaller than 256 bytes.
+    }
+    else {
+      win_test_string.push_str(&file_contents.0[0..256]);                                 // Creates a string slice with no more than 256 bytes.
+    }
+
+    if self.check_correct_split(win_test_string, WIN_NEW_LINE) == true {
+      pattern = WIN_NEW_LINE;
+      drop(lnx_test_string);
+    }
+
+    else {
+      if file_contents.1 < 256 { lnx_test_string.push_str(&file_contents.0[0..file_contents.1]); }
+      else                     { lnx_test_string.push_str(&file_contents.0[0..256]);             }
+      
+      if self.check_correct_split(lnx_test_string, LNX_NEW_LINE) == true {
+        pattern = LNX_NEW_LINE;
+      }
+      else {
+        println!("Error: Expected windows (\\r\\n) or Linux (\\n) new line delimiter.");
+        return;
+      }
+    }
     
     // Array is split into slice elements 
-    let slice_array: Vec<&str> = file_contents.0.split("\r\n").collect();
-    let mut temp_string = "".to_owned();                                         // String holds elements to be processed.
+    let slice_array: Vec<&str> = file_contents.0.split(pattern).collect();
+    let mut temp_string = "".to_owned();                                                 // String holds elements to be processed.
     let mut chunk_counter: usize = 0;                                                    // Counts the number of elements.
-    let mut handles = vec![];                                       // Stores the thread handles.
+    let mut handles = vec![];                                                            // Stores the thread handles.
+    let mut empty_string: usize = 0;
     
+    if self.threads == 0 {
+      empty_string = 20;
+    }
+    else if self.threads > 0  {
+      empty_string = slice_array.len().clone() as usize / self.threads;
+    }
+     
     let mut url = "".to_owned();
     url.push_str(self.url.as_str());
-
     let sl_array_len = slice_array.len().clone();
 
     // Allocates memory to string that holds 20 or less elements
     for chunk in slice_array {
-      if chunk_counter >= 20 {
+      if chunk_counter >= empty_string {
         // The string is cloned and passed to the thread.
         let mut c_temp_string = String::new();
         c_temp_string.push_str(temp_string.as_str());
 
-        let test_handle = self.thread_get_request(c_temp_string);
-        handles.push(test_handle);
+        if self.threads == 0 {
+          self.standard_get_request(c_temp_string);
+        }
+        else if self.threads > 0 {
+          let test_handle = self.thread_get_request(c_temp_string);
+          handles.push(test_handle);
+        }
+
         temp_string.clear();
         chunk_counter = 0;
       }
@@ -337,12 +383,88 @@ impl SodaArgs {
       self.standard_get_request(last_string);
     }
 
-    // Sleep for 2 seconds and join threads into the main thread.
-    thread::sleep(Duration::from_millis(1000));
-    for i in handles {
-      if i.is_finished() == true {
-        i.join().unwrap();
-      }
+    if self.threads > 0 {
+      println!("Waiting on threads...");
+
+      // Sleep for 1 second and join threads into the main thread.
+      thread::sleep(Duration::from_millis(10000));
+      for i in handles {
+        Self::wait_on_threads(i, self.debug.clone());
+      } 
     }
+  }
+
+  /**Function waits on a thread to finish before joining the output into the main thread.
+   * Params:
+   *  handle: JoinHandle<()> {The handle to thread.}
+   *  debug:  bool           {Display information about threads if enabled.}
+   * Returns bool.
+   */
+  pub fn wait_on_threads(handle: JoinHandle<()>, debug: bool) -> bool {
+    let mut out = false;
+    
+    loop {
+      if handle.is_finished() == true {
+        out = true;
+        break;
+      }
+
+      thread::sleep(Duration::from_secs(1));
+      if debug == true { println!("Waiting on threads..."); }
+    }
+
+    match handle.join() {
+      Ok(s) => {}
+      Err(e) => {}
+    }
+
+    if debug == true { println!("thread finished"); }
+    
+    out
+  }
+
+  /**Function displays 256 bytes of the wordlist before it has been split into an array and after.
+   * Params:
+   *  &self
+   * Returns nothing.
+  */
+  pub fn dbg_print_chunk(&self) -> () {
+    let file_contents = self.parse_wordlist();
+    let mut slice = "";
+
+    if file_contents.1 < 256 { slice = &file_contents.0[0..file_contents.0.len()]; }
+    else                     { slice = &file_contents.0[0..256]; }
+
+    println!("{:?}", slice);
+
+    let mut win_test_string = String::new();
+    win_test_string.push_str(slice);
+
+    let mut lnx_test_string = String::new();
+    lnx_test_string.push_str(slice);
+
+    let win_slice_array: Vec<&str> = win_test_string.split(WIN_NEW_LINE).collect();
+    println!("{:?}", win_slice_array);
+
+    let lnx_slice_array: Vec<&str> = lnx_test_string.split(LNX_NEW_LINE).collect();
+    println!("{:?}", lnx_slice_array);
+  }
+
+  /**Function checks if a string has been correctly split.
+   * Params:
+   *  &self
+   *  split_string: String {The string to be used in the used.}
+   *  pattern:      &str   {The delimiter for splitting the string.}
+   * Returns bool.
+   */
+  pub fn check_correct_split(&self, split_string: String, pattern: &str) -> bool {
+    let mut out = false;
+    let slice_array: Vec<&str> = split_string.split(pattern).collect();
+    
+    if slice_array.len() > 1 {
+      out = true;
+    }
+    
+    out
   }
 }

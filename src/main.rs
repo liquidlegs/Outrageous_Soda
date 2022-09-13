@@ -6,7 +6,10 @@ use clap::Parser;
 fn main() -> () {
   let mut args = SodaArgs::parse();
 
-  if args.debug == true { args.show_information(); }
+  if args.debug == true {
+    args.show_information();
+    args.dbg_print_chunk();
+  }
 
   if !args.url.contains(F_HTTP) || args.url.contains(F_HTTPS) {
     println!("url must start with {} or {}", F_HTTP, F_HTTPS);
