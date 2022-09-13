@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use std::io::{Write, BufReader, BufRead, Error as IoError, ErrorKind};
 use std::fs::OpenOptions;
 use std::thread;
@@ -31,12 +31,20 @@ pub struct SodaArgs {
   pub fuzz: Fuzz,
 
   /// Debug
-  #[clap(long, value_name = "no_value", default_value_if("debug", Some("false"), Some("true")), min_values(0), help = "Shows error messages and all server responses")]
+  #[clap(long, value_name = "_", default_value_if("debug", Some("false"), Some("true")), min_values(0), help = "Shows error messages and all server responses")]
   pub debug: bool,
 
   /// Debug Detail
-  #[clap(long, value_name = "no_value", default_value_if("verbose", Some("false"), Some("true")), min_values(0), help = "Shows all html responses")]
+  #[clap(short, long, value_name = "_", default_value_if("verbose", Some("false"), Some("true")), min_values(0), help = "Show all status codes")]
   pub verbose: bool,
+
+  /// Html Response
+  #[clap(short, long, value_name = "_", default_value_if("htmlbody", Some("false"), Some("true")), min_values(0), help = "Show html responses")]
+  pub htmlbody: bool,
+
+  /// File Extensions
+  #[clap(short, long, value_name = "EXTENSION", value_parser, help = "Generate testcases based on a list of file extensions. {Eg: html;php;aspx;js}")]
+  pub ext: Option<String>,
 
   /// Output file
   #[clap(short, long, value_name = "FILE", value_parser, help = "Output results to a file")]
@@ -132,6 +140,7 @@ impl SodaArgs {
     let debug = self.debug.clone();
     let verbose = self.verbose.clone();
     let timeout = self.timeout.clone();
+    let html = self.htmlbody.clone();
     
     // Create the thread.
     let handle = thread::spawn(move || {
@@ -148,25 +157,21 @@ impl SodaArgs {
               println!("{} -- {}", request, status);                     // print OK 200 for successful connections.
             }
 
-            if debug == true {                                           // Enable debugging to print everything.
-              println!("{} -- {}", request, status);
-              
-              if verbose == true {                                       // Enable this flag to get the html body.
-                match s.text() {
-                  Ok(body) => {
-                    println!("|\n|\n{}", body);
-                  }
-                  Err(e) => { println!("{}", e); }
+            if verbose == true {                                           // Enable debugging to print everything.
+              println!("{} -- {}", request, status);  
+            }
+
+            if html == true {                                       // Enable this flag to get the html body.
+              match s.text() {
+                Ok(body) => {
+                  println!("|\n|\n{}", body);
                 }
+                Err(e) => { println!("{}", e); }
               }
             }
           },
           Err(e) => {
-            if debug == true {
-              println!("\n{}\n__________________________________________________", e);
-            }
-            
-            else if e.is_builder() != true {
+            if e.is_builder() != true {
               println!("\n{}\n__________________________________________________", e);
             }
           }
@@ -187,6 +192,7 @@ impl SodaArgs {
     let debug = self.debug.clone();
     let verbose = self.verbose.clone();
     let timeout = self.timeout.clone();
+    let html = self.htmlbody.clone();
     
     let slices: Vec<&str> = split_wordlist.split(" ").collect();        // Create array of slices.
     let mut request = "".to_owned();                            // Builds the request
@@ -200,16 +206,16 @@ impl SodaArgs {
             println!("{} -- {}", request, status);                     // print OK 200 for successful connections.
           }
 
-          if debug == true {                                           // Enable debugging to print everything.
-            println!("{} -- {}", request, status);
-            
-            if verbose == true {                                      // Enable this flag to get the html body.
-              match s.text() {
-                Ok(body) => {
-                  println!("|\n|\n{}", body);
-                }
-                Err(e) => { println!("{}", e); }
+          if verbose == true {                                           // Enable debugging to print everything.
+            println!("{} -- {}", request, status);  
+          }
+
+          if html == true {                                      // Enable this flag to get the html body.
+            match s.text() {
+              Ok(body) => {
+                println!("|\n|\n{}", body);
               }
+              Err(e) => { println!("{}", e); }
             }
           }
         },
@@ -327,12 +333,22 @@ impl SodaArgs {
         return;
       }
     }
+
+    let mut ext_string_len: usize = 0;
+    let mut ext_string = String::new();
+    match self.ext.clone() {
+      Some(s) => {
+        ext_string.push_str(s.as_str());
+        ext_string_len = ext_string.len();
+      },
+      None => {}
+    }
     
     // Array is split into slice elements 
     let slice_array: Vec<&str> = file_contents.0.split(pattern).collect();
     let mut temp_string = "".to_owned();                                                 // String holds elements to be processed.
-    let mut chunk_counter: usize = 0;                                                    // Counts the number of elements.
-    let mut handles = vec![];                                                            // Stores the thread handles.
+    let mut chunk_counter: usize = 0;                                                            // Counts the number of elements.
+    let mut handles = vec![];                                               // Stores the thread handles.
     let mut empty_string: usize = 0;
     
     if self.threads == 0 {
@@ -345,6 +361,9 @@ impl SodaArgs {
     let mut url = "".to_owned();
     url.push_str(self.url.as_str());
     let sl_array_len = slice_array.len().clone();
+
+    println!("Generating {} test cases...", sl_array_len.clone()*ext_string_len.clone());
+    thread::sleep(Duration::from_secs(1));
 
     // Allocates memory to string that holds 20 or less elements
     for chunk in slice_array {
@@ -366,8 +385,22 @@ impl SodaArgs {
       }
       
       // Setup each element and push them to the string.
-      temp_string.push_str(url.as_str());
-      temp_string.push_str(chunk);
+      if ext_string_len > 0 {
+        let exts: Vec<&str> = ext_string.split(";").collect();
+        
+        for i in exts {  
+          temp_string.push_str(url.as_str());
+          temp_string.push_str(chunk);
+          temp_string.push('.');
+          temp_string.push_str(i);
+          temp_string.push(' ');
+        }
+
+      }
+      else {
+        temp_string.push_str(url.as_str());
+        temp_string.push_str(chunk);
+      }
       
       if chunk_counter < sl_array_len {
         temp_string.push(' ');
@@ -375,12 +408,14 @@ impl SodaArgs {
 
       chunk_counter += 1;
     }
-    
+
     // Run thread for left over elements that did not exceed past 20.
     if temp_string.len() > 0 {
       let mut last_string = String::new();
       last_string.push_str(temp_string.as_str());
-      self.standard_get_request(last_string);
+
+      let last_handle = self.thread_get_request(temp_string);
+      handles.push(last_handle);
     }
 
     if self.threads > 0 {
@@ -402,20 +437,25 @@ impl SodaArgs {
    */
   pub fn wait_on_threads(handle: JoinHandle<()>, debug: bool) -> bool {
     let mut out = false;
-    
+    let mut time_counter: usize = 0;
+
     loop {
+      if time_counter >= 60 { time_counter = 0; }
+      
       if handle.is_finished() == true {
         out = true;
         break;
       }
 
       thread::sleep(Duration::from_secs(1));
-      if debug == true { println!("Waiting on threads..."); }
+      time_counter += 1;
+      
+      if debug == true && time_counter >= 60 { println!("Waiting on threads..."); }
     }
 
     match handle.join() {
-      Ok(s) => {}
-      Err(e) => {}
+      Ok(_) => {}
+      Err(_) => {}
     }
 
     if debug == true { println!("thread finished"); }
