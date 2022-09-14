@@ -8,6 +8,6 @@ This project is pretty bare-bones at the moment and currently offers the followi
 - Display debug information, HTML responses and status codes
 - Control the timeout in milliseconds between each response
 - Multithreading
-- Parameter fuzzing (Not implemented)
+- Parameter fuzzing
 - Write all output to a file (Not implemented)
 - Mostly polished CLI interface

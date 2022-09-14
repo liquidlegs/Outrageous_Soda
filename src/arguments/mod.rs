@@ -145,6 +145,7 @@ impl SodaArgs {
     // Create the thread.
     let handle = thread::spawn(move || {
       let slices: Vec<&str> = split_wordlist.split(" ").collect();        // Create array of slices.
+      if debug == true { println!("Thread cycling through {} test cases\n", slices.len().clone()); }
 
       let mut request = "".to_owned();                            // Builds the request
       for i in slices {
@@ -157,11 +158,11 @@ impl SodaArgs {
               println!("{} -- {}", request, status);                     // print OK 200 for successful connections.
             }
 
-            if verbose == true {                                           // Enable debugging to print everything.
+            if verbose == true {                                         // Enable debugging to print everything.
               println!("{} -- {}", request, status);  
             }
 
-            if html == true {                                       // Enable this flag to get the html body.
+            if html == true {                                            // Enable this flag to get the html body.
               match s.text() {
                 Ok(body) => {
                   println!("|\n|\n{}", body);
@@ -194,23 +195,23 @@ impl SodaArgs {
     let timeout = self.timeout.clone();
     let html = self.htmlbody.clone();
     
-    let slices: Vec<&str> = split_wordlist.split(" ").collect();        // Create array of slices.
-    let mut request = "".to_owned();                            // Builds the request
+    let slices: Vec<&str> = split_wordlist.split(" ").collect();       // Create array of slices.
+    let mut request = "".to_owned();                           // Builds the request
     for i in slices {
       request.push_str(i);
 
-      match Self::get(request.as_str(), timeout) {                 // Sends the GET reuqest.
+      match Self::get(request.as_str(), timeout) {                // Sends the GET reuqest.
         Ok(s) => {
           let status = s.status();
           if status.is_success() && debug == false {
-            println!("{} -- {}", request, status);                     // print OK 200 for successful connections.
+            println!("{} -- {}", request, status);                    // print OK 200 for successful connections.
           }
 
-          if verbose == true {                                           // Enable debugging to print everything.
+          if verbose == true {                                        // Enable debugging to print everything.
             println!("{} -- {}", request, status);  
           }
 
-          if html == true {                                      // Enable this flag to get the html body.
+          if html == true {                                           // Enable this flag to get the html body.
             match s.text() {
               Ok(body) => {
                 println!("|\n|\n{}", body);
@@ -298,8 +299,9 @@ impl SodaArgs {
    *  set: Settings {The settings or command line arguments that the user supplied.}
    * Returns nothing.
    */
-  pub fn fuzz_directory(&self) -> () {
+  pub fn begin_fuzz(&self) -> () {
     let mut pattern = "";
+    let fuzz_type = self.fuzz.clone();
     
     let file_contents = self.parse_wordlist();                      // Gets the contents of the wordlist
     if file_contents.1 >= LARGE_FILE {
@@ -336,17 +338,21 @@ impl SodaArgs {
 
     let mut ext_string_len: usize = 0;
     let mut ext_string = String::new();
-    match self.ext.clone() {
-      Some(s) => {
-        ext_string.push_str(s.as_str());
-        ext_string_len = ext_string.len();
-      },
-      None => {}
+    
+    if fuzz_type == Fuzz::DirectoryPath {
+      match self.ext.clone() {
+        Some(s) => {
+          ext_string.push_str(s.as_str());
+          ext_string_len = ext_string.len();
+        },
+        None => {}
+      }
     }
     
     // Array is split into slice elements 
     let slice_array: Vec<&str> = file_contents.0.split(pattern).collect();
     let mut temp_string = "".to_owned();                                                 // String holds elements to be processed.
+    let mut replace_string = "".to_owned();
     let mut chunk_counter: usize = 0;                                                            // Counts the number of elements.
     let mut handles = vec![];                                               // Stores the thread handles.
     let mut empty_string: usize = 0;
@@ -358,11 +364,11 @@ impl SodaArgs {
       empty_string = slice_array.len().clone() as usize / self.threads;
     }
      
-    let mut url = "".to_owned();
-    url.push_str(self.url.as_str());
+    let url = self.url.as_str();
     let sl_array_len = slice_array.len().clone();
 
-    println!("Generating {} test cases...", sl_array_len.clone()*ext_string_len.clone());
+    if fuzz_type == Fuzz::DirectoryPath { println!("Generating {} test cases...", sl_array_len.clone()*ext_string_len.clone()); }
+    if fuzz_type == Fuzz::Parameter { println!("Generating {} test cases...", sl_array_len.clone()); }
     thread::sleep(Duration::from_secs(1));
 
     // Allocates memory to string that holds 20 or less elements
@@ -385,22 +391,31 @@ impl SodaArgs {
       }
       
       // Setup each element and push them to the string.
-      if ext_string_len > 0 {
-        let exts: Vec<&str> = ext_string.split(";").collect();
+      if fuzz_type == Fuzz::DirectoryPath {
         
-        for i in exts {  
-          temp_string.push_str(url.as_str());
+        if ext_string_len > 0 {
+          let exts: Vec<&str> = ext_string.split(";").collect();
+          
+          for i in exts {                         
+            temp_string.push_str(url); // https://address
+            temp_string.push_str(chunk);        // + word
+            temp_string.push('.');                  // + '.'
+            temp_string.push_str(i);            // + extension
+            temp_string.push(' ');                  // + ' '
+          }
+  
+        }
+        else {
+          temp_string.push_str(url);
           temp_string.push_str(chunk);
-          temp_string.push('.');
-          temp_string.push_str(i);
-          temp_string.push(' ');
         }
 
       }
-      else {
-        temp_string.push_str(url.as_str());
-        temp_string.push_str(chunk);
+      else if fuzz_type == Fuzz::Parameter {
+        replace_string = url.replace("{!}", chunk);
+        temp_string.push_str(replace_string.as_str());
       }
+
       
       if chunk_counter < sl_array_len {
         temp_string.push(' ');
@@ -411,9 +426,6 @@ impl SodaArgs {
 
     // Run thread for left over elements that did not exceed past 20.
     if temp_string.len() > 0 {
-      let mut last_string = String::new();
-      last_string.push_str(temp_string.as_str());
-
       let last_handle = self.thread_get_request(temp_string);
       handles.push(last_handle);
     }
@@ -427,6 +439,8 @@ impl SodaArgs {
         Self::wait_on_threads(i, self.debug.clone());
       } 
     }
+
+    println!("Done!");
   }
 
   /**Function waits on a thread to finish before joining the output into the main thread.

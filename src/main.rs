@@ -21,18 +21,12 @@ fn main() -> () {
     }
   }
 
-  if args.fuzz == Fuzz::DirectoryPath {
-    let check_file = SodaArgs::file_exists(args.wordlist.as_str());
+  let check_file = SodaArgs::file_exists(args.wordlist.as_str());
 
-    if check_file == false {
-      println!("Error: {} does not exist", args.wordlist.as_str());
-      return;
-    }
-
-    args.fuzz_directory();
+  if check_file == false {
+    println!("Error: {} does not exist", args.wordlist.as_str());
+    return;
   }
 
-  else if args.fuzz == Fuzz::Parameter {
-
-  }
+  args.begin_fuzz();
 }
