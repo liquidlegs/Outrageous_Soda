@@ -17,9 +17,50 @@ pub static F_HTTP: &str = "http://";                    // Checks if http:// is 
 pub static F_HTTPS: &str = "https://";                  // Checks if http:// is in the url.
 pub const WIN_NEW_LINE: &str = "\r\n";                  // The Windows style new line.
 pub const LNX_NEW_LINE: &str = "\n";                    // The Linux style new line.
+static SYNTAX: &str = "
+___        _                                            ____            _       
+/ _ \\ _   _| |_ _ __ __ _  __ _  ___  ___  _   _ ___    / ___|  ___   __| | __ _ 
+| | | | | | | __| '__/ _` |/ _` |/ _ \\/ _ \\| | | / __|   \\___ \\ / _ \\ / _` |/ _` |
+| |_| | |_| | |_| | | (_| | (_| |  __/ (_) | |_| \\__ \\    ___) | (_) | (_| | (_| |
+\\___/ \\__,_|\\__|_|  \\__,_|\\__, |\\___|\\___/ \\__,_|___/___|____/ \\___/ \\__,_|\\__,_|
+                          |___/                    |_____|                                           
+
+USAGE:
+    Outraegeous_Soda.exe <URL> <WORD_LIST> <FUZZ> [OPTIONS]
+
+ARGS:
+    <URL>     The base url in the GET request
+    <FILE>    A wordlist used for generating GET requests
+    <FUZZ>    Fuzz a URI path or paramater [possible values: directory-path, parameter]
+
+OPTIONS:
+        --debug                Shows error messages and all server responses
+
+    -e, --ext <EXTENSION>      Generate testcases based on a list of file extensions.
+                               {Eg: html;php;aspx;js}
+    
+    -H, --htmlbody             Show html responses
+
+        --help                 Print help information
+
+    -o, --output <FILE>        Output results to a file
+
+    -t, --timeout <INT>        The timeout period before the connection is dropped in miliseconds
+                               [default: 300]
+
+    -T, --threads <INT>        The number of threads you wish to use to process requests 
+                               [default:10]
+
+    -v, --verbose              Show all status codes
+
+    -V, --version              Print version information
+    
+EXAMPLES:
+    Outraegeous_Soda.exe http://127.0.0.1/dashboard/files/username={!}&password=hacked C:\\folder\\wordlist.txt parameter --debug -T 30
+    Outraegeous_Soda.exe http://127.0.0.1/dashboard/files C:\\directory\\rockyou.txt directory-path -H -T 15 --timeout 1000";
 
 #[derive(Debug, Parser)]
-#[clap(author, version, about)]
+#[clap(author = "liquidlegs", version = "0.1.0", about, help = SYNTAX)]
 pub struct SodaArgs {
   /// Url
   #[clap(value_parser, value_name = "URL", help = "The base url in the GET request")]
@@ -42,7 +83,7 @@ pub struct SodaArgs {
   pub verbose: bool,
 
   /// Html Response
-  #[clap(short, long, value_name = "_", default_value_if("htmlbody", Some("false"), Some("true")), min_values(0), help = "Show html responses")]
+  #[clap(short = 'H', long, value_name = "_", default_value_if("htmlbody", Some("false"), Some("true")), min_values(0), help = "Show html responses")]
   pub htmlbody: bool,
 
   /// File Extensions
