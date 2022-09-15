@@ -3,14 +3,13 @@
 Outrageous SODA is a simple web fuzzer that can guess URL directory names and fuzz URL parameters.
 The project currently offers the following features.
 
-- Generate URI paths from a wordlist
+- Generate directory paths from a wordlist
 - Generate requests from a list of file extensions
 - Display debug information, HTML responses and status codes
 - Control the timeout in milliseconds between each response
 - Multithreading
 - Parameter fuzzing
 - Write all output to a file
-- Mostly polished CLI interface
 
 # Compilation Instructions
 1) Download and install rustup here if not already https://www.rust-lang.org/
