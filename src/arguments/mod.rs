@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use std::io::{Write, BufReader, BufRead, Error as IoError, ErrorKind};
 use std::fs::OpenOptions;
 use std::thread;
@@ -9,11 +9,14 @@ use reqwest::Error;
 use std::borrow::Cow;
 use reqwest::blocking::Response;
 
-pub const LARGE_FILE: usize = 1000000;
-pub static F_HTTP: &str = "http://";
-pub static F_HTTPS: &str = "https://";
-pub const WIN_NEW_LINE: &str = "\r\n";
-pub const LNX_NEW_LINE: &str = "\n";
+mod fixed_buffer;
+use fixed_buffer::u8::U8FixedBuffer;
+
+pub const LARGE_FILE: usize = 1000000;                  // Displays warning for files larger than 50 MB.
+pub static F_HTTP: &str = "http://";                    // Checks if http:// is in the url. 
+pub static F_HTTPS: &str = "https://";                  // Checks if http:// is in the url.
+pub const WIN_NEW_LINE: &str = "\r\n";                  // The Windows style new line.
+pub const LNX_NEW_LINE: &str = "\n";                    // The Linux style new line.
 
 #[derive(Debug, Parser)]
 #[clap(author, version, about)]
@@ -141,14 +144,36 @@ impl SodaArgs {
     let verbose = self.verbose.clone();
     let timeout = self.timeout.clone();
     let html = self.htmlbody.clone();
+    let mut output = "".to_owned();
+
+    match self.output.clone() {
+      Some(s) => { output.push_str(s.as_str()); },
+      None => {}
+    }
     
     // Create the thread.
     let handle = thread::spawn(move || {
+      let mut u8_buffer = U8FixedBuffer::new();            // Stores data to be logged.
+
       let slices: Vec<&str> = split_wordlist.split(" ").collect();        // Create array of slices.
       if debug == true { println!("Thread cycling through {} test cases\n", slices.len().clone()); }
 
       let mut request = "".to_owned();                            // Builds the request
       for i in slices {
+        
+        if u8_buffer.len >= u8_buffer.cap-200 {                           // Buffer is emptied and written to disk.
+          match u8_buffer.write_data(output.as_str()) {
+            Ok(s) => {
+              if debug == true { println!("{} bytes were successfully written to {}", s, output.as_str()); }
+            },
+            Err(e) => {
+              if debug == true { println!("Failed to write data to file with error: {}", e.kind()); }
+            }
+          }
+
+          u8_buffer.clear();
+        }
+        
         request.push_str(i);
 
         match Self::get(request.as_str(), timeout) {                 // Sends the GET reuqest.
@@ -156,6 +181,13 @@ impl SodaArgs {
             let status = s.status();
             if status.is_success() && debug == false {
               println!("{} -- {}", request, status);                     // print OK 200 for successful connections.
+              
+              if output.len().clone() > 0 {                              // Data is only logged if an output path is supplied.
+                u8_buffer.push_str(request.as_str());
+                u8_buffer.push_str(" -- ");
+                u8_buffer.push_str(status.as_str());
+                u8_buffer.push('\n');
+              }
             }
 
             if verbose == true {                                         // Enable debugging to print everything.
@@ -180,6 +212,16 @@ impl SodaArgs {
 
         request.clear();
       }
+
+      // The contents of the u8 buffer is written to disk if there are left overs after completing the loop.
+      if u8_buffer.len > 0 {                                                                
+        match u8_buffer.write_data(output.as_str()) {
+          Ok(s) => { println!("{} bytes were successfully written to {}", s, output.as_str()); },
+          Err(e) => { println!("Failed data to file with error: {}", e.kind()); }
+        }
+
+        u8_buffer.clear();
+      }
     });
 
     if debug == true {
@@ -194,24 +236,60 @@ impl SodaArgs {
     let verbose = self.verbose.clone();
     let timeout = self.timeout.clone();
     let html = self.htmlbody.clone();
+    let mut output = "".to_owned();
+
+    match self.output.clone() {
+      Some(s) => { output.push_str(s.as_str()); },
+      None => {}
+    }
     
-    let slices: Vec<&str> = split_wordlist.split(" ").collect();       // Create array of slices.
-    let mut request = "".to_owned();                           // Builds the request
+    let mut u8_buffer = U8FixedBuffer::new();            // Stores data to be logged.
+    let slices: Vec<&str> = split_wordlist.split(" ").collect();        // Create array of slices.
+    if debug == true {
+      println!("Thread cycling through {} test cases\n", slices.len().clone());
+    }
+
+    let mut request = "".to_owned();                            // Builds the request.
     for i in slices {
+      
+      if u8_buffer.len >= u8_buffer.cap-200 {                           // Fixed buffer is emptied and written to disk.
+        match u8_buffer.write_data(output.as_str()) {
+          Ok(s) => {
+            if debug == true {
+              println!("{} bytes were successfully written to {}", s, output.as_str());
+            }
+          },
+          Err(e) => {
+            if debug == true {
+              println!("Failed to write data to file with error: {}", e.kind());
+            }
+          }
+        }
+
+        u8_buffer.clear();
+      }
+      
       request.push_str(i);
 
-      match Self::get(request.as_str(), timeout) {                // Sends the GET reuqest.
+      match Self::get(request.as_str(), timeout) {                 // Sends the GET reuqest.
         Ok(s) => {
           let status = s.status();
           if status.is_success() && debug == false {
-            println!("{} -- {}", request, status);                    // print OK 200 for successful connections.
+            println!("{} -- {}", request, status);                     // print OK 200 for successful connections.
+            
+            if output.len().clone() > 0 {                              // Data will be only be collected if an output path has been supplied.
+              u8_buffer.push_str(request.as_str());
+              u8_buffer.push_str(" -- ");
+              u8_buffer.push_str(status.as_str());
+              u8_buffer.push('\n');
+            }
           }
 
-          if verbose == true {                                        // Enable debugging to print everything.
+          if verbose == true {                                         // Enable debugging to print everything.
             println!("{} -- {}", request, status);  
           }
 
-          if html == true {                                           // Enable this flag to get the html body.
+          if html == true {                                            // Enable this flag to get the html body.
             match s.text() {
               Ok(body) => {
                 println!("|\n|\n{}", body);
@@ -221,17 +299,23 @@ impl SodaArgs {
           }
         },
         Err(e) => {
-          if debug == true {
-            println!("\n{}\n__________________________________________________", e);
-          }
-          
-          else if e.is_builder() != true {
+          if e.is_builder() != true {
             println!("\n{}\n__________________________________________________", e);
           }
         }
       }
 
       request.clear();
+    }
+
+    // The contents of the u8 buffer is written to disk if there are left overs after completing the loop.
+    if u8_buffer.len > 0 {
+      match u8_buffer.write_data(output.as_str()) {
+        Ok(s) => { println!("{} bytes were successfully written to  {}", s, output.as_str()); },
+        Err(e) => { println!("Failed data to file with error: {}", e.kind()); }
+      }
+
+      u8_buffer.clear();
     }
   }
 
@@ -271,7 +355,7 @@ impl SodaArgs {
       Ok(read_file) => {
         let mut reader = BufReader::new(read_file);
 
-        match reader.read_until(u8::MIN, &mut byte_array) {                      // Reads the entire file and stores in a buffer.
+        match reader.read_until(u8::MIN, &mut byte_array) {                  // Reads the entire file and stores in a buffer.
           Ok(b) => { total_bytes_read += b; },
           Err(e) => {
             if self.debug == true { println!("{}", e.kind()); }
@@ -299,11 +383,12 @@ impl SodaArgs {
    *  set: Settings {The settings or command line arguments that the user supplied.}
    * Returns nothing.
    */
+  #[allow(unused_assignments)]
   pub fn begin_fuzz(&self) -> () {
     let mut pattern = "";
     let fuzz_type = self.fuzz.clone();
     
-    let file_contents = self.parse_wordlist();                      // Gets the contents of the wordlist
+    let file_contents = self.parse_wordlist();                                   // Gets the contents of the wordlist
     if file_contents.1 >= LARGE_FILE {
       println!("Wanring: word list is larger than 50MB. Performance may be slow...");
     }
@@ -397,7 +482,7 @@ impl SodaArgs {
           let exts: Vec<&str> = ext_string.split(";").collect();
           
           for i in exts {                         
-            temp_string.push_str(url); // https://address
+            temp_string.push_str(url);          // https://address
             temp_string.push_str(chunk);        // + word
             temp_string.push('.');                  // + '.'
             temp_string.push_str(i);            // + extension
@@ -449,6 +534,7 @@ impl SodaArgs {
    *  debug:  bool           {Display information about threads if enabled.}
    * Returns bool.
    */
+  #[allow(unused_assignments)]
   pub fn wait_on_threads(handle: JoinHandle<()>, debug: bool) -> bool {
     let mut out = false;
     let mut time_counter: usize = 0;
@@ -482,6 +568,7 @@ impl SodaArgs {
    *  &self
    * Returns nothing.
   */
+  #[allow(unused_assignments)]
   pub fn dbg_print_chunk(&self) -> () {
     let file_contents = self.parse_wordlist();
     let mut slice = "";

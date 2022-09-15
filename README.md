@@ -9,5 +9,12 @@ This project is pretty bare-bones at the moment and currently offers the followi
 - Control the timeout in milliseconds between each response
 - Multithreading
 - Parameter fuzzing
-- Write all output to a file (Not implemented)
+- Write all output to a file
 - Mostly polished CLI interface
+
+# Compilation Instructions
+1) Download and install rustup here if not already https://www.rust-lang.org/
+2) Add the cargo to your path
+3) cd into the project directory
+4) Run the following command and navigate to /target/build/
+> Cargo build --release
