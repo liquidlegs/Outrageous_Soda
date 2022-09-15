@@ -56,50 +56,50 @@ OPTIONS:
     -V, --version              Print version information
     
 EXAMPLES:
-    Outraegeous_Soda.exe http://127.0.0.1/dashboard/files/username={!}&password=hacked C:\\folder\\wordlist.txt parameter --debug -T 30
+    Outraegeous_Soda.exe http://127.0.0.1/dashboard/files/?username={!}&password=hacked C:\\folder\\wordlist.txt parameter --debug -T 30
     Outraegeous_Soda.exe http://127.0.0.1/dashboard/files C:\\directory\\rockyou.txt directory-path -H -T 15 --timeout 1000";
 
 #[derive(Debug, Parser)]
 #[clap(author = "liquidlegs", version = "0.1.0", about, help = SYNTAX)]
 pub struct SodaArgs {
   /// Url
-  #[clap(value_parser, value_name = "URL", help = "The base url in the GET request")]
+  #[clap(value_parser]
   pub url: String,
 
   /// WordList
-  #[clap(value_parser, value_name = "FILE", help = "A wordlist used for generating GET requests")]
+  #[clap(value_parser]
   pub wordlist: String,
 
   /// Fuzz
-  #[clap(value_enum, help = "Fuzz a URI path or paramater")]
+  #[clap(value_enum]
   pub fuzz: Fuzz,
 
   /// Debug
-  #[clap(long, value_name = "_", default_value_if("debug", Some("false"), Some("true")), min_values(0), help = "Shows error messages and all server responses")]
+  #[clap(long, default_value_if("debug", Some("false"), Some("true")), min_values(0)]
   pub debug: bool,
 
   /// Debug Detail
-  #[clap(short, long, value_name = "_", default_value_if("verbose", Some("false"), Some("true")), min_values(0), help = "Show all status codes")]
+  #[clap(short, long, default_value_if("verbose", Some("false"), Some("true")), min_values(0)]
   pub verbose: bool,
 
   /// Html Response
-  #[clap(short = 'H', long, value_name = "_", default_value_if("htmlbody", Some("false"), Some("true")), min_values(0), help = "Show html responses")]
+  #[clap(short = 'H', long, default_value_if("htmlbody", Some("false"), Some("true")), min_values(0)]
   pub htmlbody: bool,
 
   /// File Extensions
-  #[clap(short, long, value_name = "EXTENSION", value_parser, help = "Generate testcases based on a list of file extensions. {Eg: html;php;aspx;js}")]
+  #[clap(short, long, value_parser]
   pub ext: Option<String>,
 
   /// Output file
-  #[clap(short, long, value_name = "FILE", value_parser, help = "Output results to a file")]
+  #[clap(short, long, value_parser]
   pub output: Option<String>,
 
   /// Timeout (miliseconds)
-  #[clap(short, long, default_value = "300", value_name = "INT", help = "The timeout period before the connection is dropped in miliseconds")]
+  #[clap(short, long, default_value = "300"]
   pub timeout: u64,
 
   /// Threads
-  #[clap(short = 'T', long, default_value = "10", value_name = "INT", help = "The number of threads you wish to use to process requests")]
+  #[clap(short = 'T', long, default_value = "10"]
   pub threads: usize,
 }
 
