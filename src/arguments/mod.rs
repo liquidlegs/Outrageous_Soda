@@ -63,43 +63,43 @@ EXAMPLES:
 #[clap(author = "liquidlegs", version = "0.1.0", about, help = SYNTAX)]
 pub struct SodaArgs {
   /// Url
-  #[clap(value_parser]
+  #[clap(value_parser)]
   pub url: String,
 
   /// WordList
-  #[clap(value_parser]
+  #[clap(value_parser)]
   pub wordlist: String,
 
   /// Fuzz
-  #[clap(value_enum]
+  #[clap(value_enum)]
   pub fuzz: Fuzz,
 
   /// Debug
-  #[clap(long, default_value_if("debug", Some("false"), Some("true")), min_values(0)]
+  #[clap(long, default_value_if("debug", Some("false"), Some("true")), min_values(0))]
   pub debug: bool,
 
   /// Debug Detail
-  #[clap(short, long, default_value_if("verbose", Some("false"), Some("true")), min_values(0)]
+  #[clap(short, long, default_value_if("verbose", Some("false"), Some("true")), min_values(0))]
   pub verbose: bool,
 
   /// Html Response
-  #[clap(short = 'H', long, default_value_if("htmlbody", Some("false"), Some("true")), min_values(0)]
+  #[clap(short = 'H', long, default_value_if("htmlbody", Some("false"), Some("true")), min_values(0))]
   pub htmlbody: bool,
 
   /// File Extensions
-  #[clap(short, long, value_parser]
+  #[clap(short, long, value_parser)]
   pub ext: Option<String>,
 
   /// Output file
-  #[clap(short, long, value_parser]
+  #[clap(short, long, value_parser)]
   pub output: Option<String>,
 
   /// Timeout (miliseconds)
-  #[clap(short, long, default_value = "300"]
+  #[clap(short, long, default_value = "300")]
   pub timeout: u64,
 
   /// Threads
-  #[clap(short = 'T', long, default_value = "10"]
+  #[clap(short = 'T', long, default_value = "10")]
   pub threads: usize,
 }
 
