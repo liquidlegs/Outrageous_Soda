@@ -1,9 +1,18 @@
 #[path = "arguments\\mod.rs"]
 pub mod arguments;
 use crate::arguments::*;
+use arguments::display_help;
 use clap::Parser;
 
 fn main() -> () {
+  let env_arg: Vec<String> = std::env::args().collect();
+  match env_arg[1].as_str() {
+    "--help" | "-h" => {
+      display_help();
+    }
+    _ => {}
+  }
+
   // Here we parse all the command line arguments.
   let mut args = SodaArgs::parse();
 

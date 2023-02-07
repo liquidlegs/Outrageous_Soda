@@ -1,66 +1,41 @@
 use clap::Parser;
-use std::io::{Write, BufReader, BufRead, Error as IoError, ErrorKind};
-use std::fs::OpenOptions;
-use std::thread;
-use std::thread::JoinHandle;
+use std::{
+  io::{Write, BufReader, BufRead, Error as IoError, ErrorKind},
+  fs::OpenOptions,
+  thread,
+  thread::JoinHandle,
+  borrow::Cow,
+  sync::mpsc::{Sender, Receiver},
+  sync::mpsc,
+};
+
 use core::time::Duration;
-use reqwest;
-use reqwest::Error;
-use std::borrow::Cow;
-use reqwest::blocking::Response;
+use console::style;
+
+use reqwest::{
+  self, StatusCode, Error,
+  blocking::Response,
+};
 
 mod fixed_buffer;
 use fixed_buffer::u8::U8FixedBuffer;
 
-pub const LARGE_FILE: usize = 1000000;                  // Displays warning for files larger than 50 MB.
+pub const LARGE_FILE: usize = 50000000;                 // Displays warning for files larger than 50 MB.
 pub static F_HTTP: &str = "http://";                    // Checks if http:// is in the url. 
 pub static F_HTTPS: &str = "https://";                  // Checks if http:// is in the url.
 pub const WIN_NEW_LINE: &str = "\r\n";                  // The Windows style new line.
 pub const LNX_NEW_LINE: &str = "\n";                    // The Linux style new line.
-static SYNTAX: &str = "
+pub const TITLE : &str = "
 ___        _                                            ____            _       
 / _ \\ _   _| |_ _ __ __ _  __ _  ___  ___  _   _ ___    / ___|  ___   __| | __ _ 
 | | | | | | | __| '__/ _` |/ _` |/ _ \\/ _ \\| | | / __|   \\___ \\ / _ \\ / _` |/ _` |
 | |_| | |_| | |_| | | (_| | (_| |  __/ (_) | |_| \\__ \\    ___) | (_) | (_| | (_| |
 \\___/ \\__,_|\\__|_|  \\__,_|\\__, |\\___|\\___/ \\__,_|___/___|____/ \\___/ \\__,_|\\__,_|
                           |___/                    |_____|                                           
-
-USAGE:
-    Outraegeous_Soda.exe <URL> <WORD_LIST> <FUZZ> [OPTIONS]
-
-ARGS:
-    <URL>     The base url in the GET request
-    <FILE>    A wordlist used for generating GET requests
-    <FUZZ>    Fuzz a URI path or paramater [possible values: directory-path, parameter]
-
-OPTIONS:
-        --debug                Shows error messages and all server responses
-
-    -e, --ext <EXTENSION>      Generate testcases based on a list of file extensions.
-                               {Eg: html;php;aspx;js}
-    
-    -H, --htmlbody             Show html responses
-
-        --help                 Print help information
-
-    -o, --output <FILE>        Output results to a file
-
-    -t, --timeout <INT>        The timeout period before the connection is dropped in miliseconds
-                               [default: 300]
-
-    -T, --threads <INT>        The number of threads you wish to use to process requests 
-                               [default:10]
-
-    -v, --verbose              Show all status codes
-
-    -V, --version              Print version information
-    
-EXAMPLES:
-    Outraegeous_Soda.exe http://127.0.0.1/dashboard/files/?username={!}&password=hacked C:\\folder\\wordlist.txt parameter --debug -T 30
-    Outraegeous_Soda.exe http://127.0.0.1/dashboard/files C:\\directory\\rockyou.txt directory-path -H -T 15 --timeout 1000";
+";
 
 #[derive(Debug, Parser)]
-#[clap(author = "liquidlegs", version = "0.1.0", about, help = SYNTAX)]
+#[clap(author = "liquidlegs", version = "0.1.0", about, help = "")]
 pub struct SodaArgs {
   /// Url
   #[clap(value_parser)]
@@ -87,12 +62,16 @@ pub struct SodaArgs {
   pub htmlbody: bool,
 
   /// File Extensions
-  #[clap(short, long, value_parser)]
+  #[clap(short, long)]
   pub ext: Option<String>,
 
   /// Output file
-  #[clap(short, long, value_parser)]
+  #[clap(short, long)]
   pub output: Option<String>,
+
+  #[clap(short, long = "scodes")]
+  /// Status codes
+  pub status_codes: Option<String>,
 
   /// Timeout (miliseconds)
   #[clap(short, long, default_value = "300")]
@@ -101,6 +80,70 @@ pub struct SodaArgs {
   /// Threads
   #[clap(short = 'T', long, default_value = "10")]
   pub threads: usize,
+}
+
+pub fn display_help() -> () {
+  println!(
+    "{}
+    
+    {}:
+        {} <URL> <WORD_LIST> <FUZZ> [OPTIONS]
+    
+    {}:
+        <URL>     The base url in the GET request
+        <FILE>    A wordlist used for generating GET requests
+        <FUZZ>    Fuzz a URI path or paramater [possible values: directory-path, parameter]
+    
+    {}:
+            --{}                     Shows error messages and all server responses
+        {}, --{}         <EXT[...]>    Generate testcases by a comma,separated,list,of,extensions
+        {}, --{}                  Show html responses
+        {}, --{}                      Print help information
+        {}, --{}      <FILE>        Output results to a file
+        {}, --{}     <INT>         The timeout period before the connection is dropped in miliseconds - [default: 300]
+        {}, --{}     <INT>         The number of threads you wish to use to process requests - [default:10]
+        {}, --{}      <CODES[...]>  Specify the status codes to be displayed - [default: 200]
+        {}, --{}                   Show all status codes
+        {}, --{}                   Print version information
+        
+    {}:
+        {} \"{}//127.0.0.1/?{}={{!}}&{}=hacked\" C:\\folder\\wordlist.txt {} --{} {} {}
+        {} \"{}//127.0.0.1/files\" C:\\directory\\rockyou.txt {} {} {} {} --{} {}",
+      
+      style(TITLE).red().bright(), style("USAGE").yellow().bright(), style("Outraegeous_Soda.exe").red().bright(), 
+      style("ARGS").yellow().bright(), style("OPTIONS").yellow().bright(),
+      style("debug").cyan(), style("-e").green().bright(), style("ext").cyan(), style("-H").green().bright(), 
+      style("htmlbody").cyan(), style("-h").green().bright(), style("help").cyan(), style("-o").green().bright(), style("output").cyan(), 
+      style("-t").green().bright(), style("timeout").cyan(), style("-T").green().bright(), style("threads").cyan(), 
+      style("-s").green().bright(), style("scodes").cyan(), style("-v").green().bright(), style("verbose").cyan(), style("-V").green().bright(), 
+      style("version").cyan(), style("EXAMPLES").yellow().bright(),
+      style("outraegeous_soda.exe").red().bright(), style("http:").yellow(), style("username").cyan(), style("password").magenta().bright(),
+      style("parameter").magenta().bright(), style("debug").cyan(), style("-T").green().bright(), style("30").yellow(),
+      style("outraegeous_soda.exe").red().bright(), style("http:").yellow(), style("directory-path").magenta().bright(),
+      style("-H").green().bright(), style("-T").green().bright(), style("15").yellow(), style("timeout").cyan(),
+      style("1000").yellow());
+}
+
+#[derive(Debug, Clone)]
+pub enum ThreadMessage {
+  Finished,
+  Continue,
+}
+
+pub mod arg_fmt {
+  use console::style;
+
+  pub fn f_debug(msg: &str, value: &str) -> () {
+    println!("{} {} {}", style("Debug =>").red().bright(), style(msg).yellow(), style(value).cyan());
+  }
+
+  pub fn f_error(msg: &str, value: &str, error_enum: String) -> () {
+    println!("{}: {} {} - {}", style("Error").red().bright(), msg, style(value).cyan(),style(error_enum).red());
+  }
+
+  pub fn f_io(bytes: usize, value: &str) -> () {
+    println!("{}: {} bytes were successfully written to {}", style("Ok").yellow().bright(), style(bytes).cyan(), style(value).cyan());
+  }
 }
 
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq)]
@@ -174,18 +217,35 @@ impl SodaArgs {
     }
   }
 
+  pub fn compare_status_code(request: &String, status: StatusCode) -> () {
+    match status {
+      StatusCode::OK =>                        { println!("{request} -- {}", style(status).green().bright()); }
+      StatusCode::ACCEPTED =>                  { println!("{request} -- {}", style(status).green().bright()); }
+      StatusCode::BAD_GATEWAY =>               { println!("{request} -- {}", style(status).red().bright());   }
+      StatusCode::BAD_REQUEST =>               { println!("{request} -- {}", style(status).red().bright());   }
+      StatusCode::EXPECTATION_FAILED =>        { println!("{request} -- {}", style(status).red().bright());   }
+      StatusCode::FAILED_DEPENDENCY =>         { println!("{request} -- {}", style(status).red().bright());   }
+      StatusCode::HTTP_VERSION_NOT_SUPPORTED =>{ println!("{request} -- {}", style(status).red().bright());   }
+      StatusCode::NOT_FOUND =>                 { println!("{request} -- {}", style(status).red().bright());   }
+      StatusCode::INTERNAL_SERVER_ERROR =>     { println!("{request} -- {}", style(status).red().bright());   }
+      StatusCode::GATEWAY_TIMEOUT =>           { println!("{request} -- {}", style(status).red().bright());   }
+      _ =>                                     { println!("{request} -- {}", style(status).cyan());           }
+    }
+  }
+
   /**Function sends a simple get request and displays the server repsonse to the screen.
  * Params:
  *  &self
  *  split_wordlist: &str {A chunk of the input wordlist that be handed off to a thread.}
  * Returns JoinHandle<()>
  */
-  pub fn thread_get_request(&self, split_wordlist: String) -> thread::JoinHandle<()> {
+  pub fn thread_get_request(&self, split_wordlist: String, sender: Sender<ThreadMessage>) -> thread::JoinHandle<()> {
     let debug = self.debug.clone();
     let verbose = self.verbose.clone();
     let timeout = self.timeout.clone();
     let html = self.htmlbody.clone();
     let mut output = "".to_owned();
+    let status_codes = self.get_status_codes();
 
     match self.output.clone() {
       Some(s) => { output.push_str(s.as_str()); },
@@ -194,10 +254,14 @@ impl SodaArgs {
     
     // Create the thread.
     let handle = thread::spawn(move || {
+      let c_sender = sender.clone();
       let mut u8_buffer = U8FixedBuffer::new();            // Stores data to be logged.
 
       let slices: Vec<&str> = split_wordlist.split(" ").collect();        // Create array of slices.
-      if debug == true { println!("Thread cycling through {} test cases\n", slices.len().clone()); }
+      if debug == true {
+        println!("{} {} {} {}", style("Debug =>").red().bright(), 
+        style("Thread cycling through").yellow(), style(slices.len().clone()).cyan(), style("test cases\n").yellow());
+      }
 
       let mut request = "".to_owned();                            // Builds the request
       for i in slices {
@@ -205,10 +269,12 @@ impl SodaArgs {
         if u8_buffer.len >= u8_buffer.cap-200 {                           // Buffer is emptied and written to disk.
           match u8_buffer.write_data(output.as_str()) {
             Ok(s) => {
-              if debug == true { println!("{} bytes were successfully written to {}", s, output.as_str()); }
+              if debug == true {
+                arg_fmt::f_io(s, output.as_str());
+              }
             },
             Err(e) => {
-              if debug == true { println!("Failed to write data to file with error: {}", e.kind()); }
+              arg_fmt::f_error("Failed to write data to file", "", format!("{}", e.kind()));
             }
           }
 
@@ -220,19 +286,21 @@ impl SodaArgs {
         match Self::get(request.as_str(), timeout) {                 // Sends the GET reuqest.
           Ok(s) => {
             let status = s.status();
-            if status.is_success() && debug == false {
-              println!("{} -- {}", request, status);                     // print OK 200 for successful connections.
-              
-              if output.len().clone() > 0 {                              // Data is only logged if an output path is supplied.
-                u8_buffer.push_str(request.as_str());
-                u8_buffer.push_str(" -- ");
-                u8_buffer.push_str(status.as_str());
-                u8_buffer.push('\n');
+
+            if debug == false {
+              for i in status_codes.clone() {
+                if status.clone() == i {
+                  Self::compare_status_code(&request, i);
+                  
+                  if output.len().clone() > 0 {                              
+                    u8_buffer.push_str(format!("{} -- {}\n", request, status).as_str());
+                  }
+                }
               }
             }
 
             if verbose == true {                                         // Enable debugging to print everything.
-              println!("{} -- {}", request, status);  
+              Self::compare_status_code(&request, status);  
             }
 
             if html == true {                                            // Enable this flag to get the html body.
@@ -243,30 +311,55 @@ impl SodaArgs {
                 Err(e) => { println!("{}", e); }
               }
             }
+
+            match sender.send(ThreadMessage::Continue) {
+              Ok(_) => {},
+              Err(e) => {
+                println!("{e}");
+              }
+            }
+            
           },
           Err(e) => {
             if e.is_builder() != true {
               println!("\n{}\n__________________________________________________", e);
             }
+
+            match sender.send(ThreadMessage::Continue) {
+              Ok(_) => {},
+              Err(e) => {
+                println!("{e}");
+              }
+            }
           }
         }
 
         request.clear();
+        thread::sleep(Duration::from_millis(100));
       }
 
       // The contents of the u8 buffer is written to disk if there are left overs after completing the loop.
       if u8_buffer.len > 0 {                                                                
         match u8_buffer.write_data(output.as_str()) {
-          Ok(s) => { println!("{} bytes were successfully written to {}", s, output.as_str()); },
-          Err(e) => { println!("Failed data to file with error: {}", e.kind()); }
+          Ok(s) => {
+            arg_fmt::f_io(s, output.as_str());
+          },
+          Err(e) => { arg_fmt::f_error("Failed to write data to file", "", format!("{}", e.kind())); }
         }
 
         u8_buffer.clear();
       }
+
+      match sender.send(ThreadMessage::Finished) {
+        Ok(_) => {},
+        Err(e) => {
+          println!("{e}");
+        }
+      }
     });
 
     if debug == true {
-      println!("starting thread {:?}", handle.thread().id());
+      arg_fmt::f_debug("Starting thread", format!("{:?}", handle.thread().id()).as_str());
     }
 
     handle
@@ -278,6 +371,7 @@ impl SodaArgs {
     let timeout = self.timeout.clone();
     let html = self.htmlbody.clone();
     let mut output = "".to_owned();
+    let status_codes = self.get_status_codes();
 
     match self.output.clone() {
       Some(s) => { output.push_str(s.as_str()); },
@@ -297,12 +391,12 @@ impl SodaArgs {
         match u8_buffer.write_data(output.as_str()) {
           Ok(s) => {
             if debug == true {
-              println!("{} bytes were successfully written to {}", s, output.as_str());
+              arg_fmt::f_io(s, output.as_str());
             }
           },
           Err(e) => {
             if debug == true {
-              println!("Failed to write data to file with error: {}", e.kind());
+              arg_fmt::f_error("Failed to write data to file", "", format!("{}", e))
             }
           }
         }
@@ -315,19 +409,21 @@ impl SodaArgs {
       match Self::get(request.as_str(), timeout) {                 // Sends the GET reuqest.
         Ok(s) => {
           let status = s.status();
-          if status.is_success() && debug == false {
-            println!("{} -- {}", request, status);                     // print OK 200 for successful connections.
-            
-            if output.len().clone() > 0 {                              // Data will be only be collected if an output path has been supplied.
-              u8_buffer.push_str(request.as_str());
-              u8_buffer.push_str(" -- ");
-              u8_buffer.push_str(status.as_str());
-              u8_buffer.push('\n');
+          
+          if debug == false {
+            for i in status_codes.clone() {
+              if status.clone() == i {
+                Self::compare_status_code(&request, i);
+                
+                if output.len().clone() > 0 {                              
+                  u8_buffer.push_str(format!("{} -- {}\n", request, status).as_str());
+                }
+              }
             }
           }
 
           if verbose == true {                                         // Enable debugging to print everything.
-            println!("{} -- {}", request, status);  
+            Self::compare_status_code(&request, status);  
           }
 
           if html == true {                                            // Enable this flag to get the html body.
@@ -431,7 +527,11 @@ impl SodaArgs {
     
     let file_contents = self.parse_wordlist();                                   // Gets the contents of the wordlist
     if file_contents.1 >= LARGE_FILE {
-      println!("Wanring: word list is larger than 50MB. Performance may be slow...");
+      println!(
+        "{}: {} {}", 
+        style("Warning").yellow().bright(), style("word-list is larger than 50MB.").cyan(),
+        style("Performance may be slow...").red().bright()
+      );
     }
 
     // The next 30 lines from here works whether the text file using the windows \r\n new line or the linux \n new line
@@ -457,7 +557,7 @@ impl SodaArgs {
         pattern = LNX_NEW_LINE;
       }
       else {
-        println!("Error: Expected windows (\\r\\n) or Linux (\\n) new line delimiter.");
+        println!("{}: Expected windows (\\r\\n) or Linux (\\n) new line delimiter.", style("Error").red().bright());
         return;
       }
     }
@@ -493,9 +593,31 @@ impl SodaArgs {
     let url = self.url.as_str();
     let sl_array_len = slice_array.len().clone();
 
-    if fuzz_type == Fuzz::DirectoryPath { println!("Generating {} test cases...", sl_array_len.clone()*ext_string_len.clone()); }
-    if fuzz_type == Fuzz::Parameter { println!("Generating {} test cases...", sl_array_len.clone()); }
+    if fuzz_type == Fuzz::DirectoryPath {
+      if ext_string_len == 0 {
+        println!(
+          "{} {} {}", style("Generating").yellow(),  
+          style(sl_array_len.clone()).cyan(), style("test cases...").yellow()
+        );
+      }
+      
+      else {
+        println!(
+          "{} {} {}", style("Generating").yellow(),  
+          style(sl_array_len.clone()*ext_string_len.clone()).cyan(), style("test cases...").yellow()
+        );
+      }
+    }
+
+    if fuzz_type == Fuzz::Parameter {
+      println!(
+        "{} {} {}", style("Generating").yellow(),  
+        style(sl_array_len.clone()).cyan(), style("test cases...").yellow()
+      );
+    }
+
     thread::sleep(Duration::from_secs(1));
+    let (sender, recv) = mpsc::channel::<ThreadMessage>();
 
     // Allocates memory to string that holds 20 or less elements
     for chunk in slice_array {
@@ -503,12 +625,13 @@ impl SodaArgs {
         // The string is cloned and passed to the thread.
         let mut c_temp_string = String::new();
         c_temp_string.push_str(temp_string.as_str());
+        let c_sender = sender.clone();
 
         if self.threads == 0 {
           self.standard_get_request(c_temp_string);
         }
         else if self.threads > 0 {
-          let test_handle = self.thread_get_request(c_temp_string);
+          let test_handle = self.thread_get_request(c_temp_string, c_sender);
           handles.push(test_handle);
         }
 
@@ -520,7 +643,7 @@ impl SodaArgs {
       if fuzz_type == Fuzz::DirectoryPath {
         
         if ext_string_len > 0 {
-          let exts: Vec<&str> = ext_string.split(";").collect();
+          let exts: Vec<&str> = ext_string.split(",").collect();
           
           for i in exts {                         
             temp_string.push_str(url);          // https://address
@@ -552,17 +675,66 @@ impl SodaArgs {
 
     // Run thread for left over elements that did not exceed past 20.
     if temp_string.len() > 0 {
-      let last_handle = self.thread_get_request(temp_string);
+      let last_handle = self.thread_get_request(temp_string, sender);
       handles.push(last_handle);
     }
 
     if self.threads > 0 {
-      println!("Waiting on threads...");
+      println!("{}: {}", style("OK").yellow().bright(), style("Waiting on threads...").cyan());
 
       // Sleep for 1 second and join threads into the main thread.
-      thread::sleep(Duration::from_millis(10000));
+      let mut finished_threads: Vec<ThreadMessage> = Default::default();
+      let mut retry_counter: usize = 0;
+
+      // The code block belows ensures threads are joined to the main thread when their finished.
+      loop {
+        match recv.recv_timeout(Duration::from_millis(100)) {
+          Ok(s) => {
+
+            match s {
+              ThreadMessage::Continue => {}
+              ThreadMessage::Finished => {
+                finished_threads.push(s);
+              }
+            }
+
+          },
+          Err(e) => {
+            println!("{e}");
+            
+            if retry_counter >= 10 {
+              break;
+            }
+            
+            if self.debug.clone() == true {
+              arg_fmt::f_debug("retrying to receive message from thread", retry_counter.to_string().as_str());
+            }
+
+            retry_counter += 1;
+          }
+        }
+
+        if finished_threads.len() >= self.threads.clone()+1 {
+          break;
+        }
+      }
+      
+
       for i in handles {
-        Self::wait_on_threads(i, self.debug.clone());
+        let id = i.thread().id().clone();
+        
+        match i.join() {
+          Ok(_) => {
+            println!(
+              "{} {} {:?}", 
+              style("Debug =>").red().bright(), style("joining thread to the main thread").yellow(),
+              style(id).cyan()
+            );
+          },
+          Err(e) => {}
+        }
+
+        // Self::wait_on_threads(i, self.debug.clone());
       } 
     }
 
@@ -647,6 +819,60 @@ impl SodaArgs {
       out = true;
     }
     
+    out
+  }
+
+  pub fn get_status_codes(&self) -> Vec<StatusCode> {
+    let mut values: Vec<u16> = Default::default();
+    let mut codes = String::from("");
+    
+    if let Some(c) = self.status_codes.clone() {
+      codes.push_str(c.as_str());
+    }
+
+    let split_success = self.check_correct_split(codes.clone(), ",");
+    if split_success == true {
+      let split: Vec<&str> = codes.split(",").collect();
+      
+      for i in split {
+        match i.parse::<u16>() {
+          Ok(s) => { values.push(s); },
+          Err(e) => {
+            panic!(
+              "{}: unable to parse status code {} - {}", 
+              style("Error").red().bright(), style(i).cyan(), style(e).red().bright()
+            );
+          }
+        }
+      }
+    }
+
+    else {
+      if codes.len() > 0 {
+        let test_value = codes.as_str();
+        
+        match test_value.parse::<u16>() {
+          Ok(s) => { values.push(s); },
+          Err(e) => {
+            panic!(
+              "{}: unable to parse status code {} - {}", 
+              style("Error").red().bright(), style(test_value).cyan(), style(e).red().bright()
+            );
+          }
+        }
+      }
+    }
+
+    let mut out: Vec<StatusCode> = Default::default();
+    for i in values {
+      match StatusCode::from_u16(i) {
+        Ok(s) => {
+          out.push(s);
+        },
+        Err(e) => {}
+      }
+    }
+
     out
   }
 }
