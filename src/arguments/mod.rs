@@ -73,6 +73,10 @@ pub struct SodaArgs {
   /// Status codes
   pub status_codes: Option<String>,
 
+  #[clap(short, long)]
+  /// Do not display responses equal to the specified length
+  pub ignore_len: Option<String>,
+
   /// Timeout (miliseconds)
   #[clap(short, long, default_value = "300")]
   pub timeout: u64,
@@ -103,6 +107,7 @@ pub fn display_help() -> () {
         {}, --{}     <INT>         The timeout period before the connection is dropped in miliseconds - [default: 300]
         {}, --{}     <INT>         The number of threads you wish to use to process requests - [default:10]
         {}, --{}      <CODES[...]>  Specify the status codes to be displayed - [default: 200]
+        {}, --{}  <LEN[...]>    Do not display responses equal to the specified length
         {}, --{}                   Show all status codes
         {}, --{}                   Print version information
         
@@ -115,8 +120,9 @@ pub fn display_help() -> () {
       style("debug").cyan(), style("-e").green().bright(), style("ext").cyan(), style("-H").green().bright(), 
       style("htmlbody").cyan(), style("-h").green().bright(), style("help").cyan(), style("-o").green().bright(), style("output").cyan(), 
       style("-t").green().bright(), style("timeout").cyan(), style("-T").green().bright(), style("threads").cyan(), 
-      style("-s").green().bright(), style("scodes").cyan(), style("-v").green().bright(), style("verbose").cyan(), style("-V").green().bright(), 
-      style("version").cyan(), style("EXAMPLES").yellow().bright(),
+      style("-s").green().bright(), style("scodes").cyan(), style("-i").green().bright(), 
+      style("ignore-len").cyan(), style("-v").green().bright(), 
+      style("verbose").cyan(), style("-V").green().bright(), style("version").cyan(), style("EXAMPLES").yellow().bright(),
       style("outraegeous_soda.exe").red().bright(), style("http:").yellow(), style("username").cyan(), style("password").magenta().bright(),
       style("parameter").magenta().bright(), style("debug").cyan(), style("-T").green().bright(), style("30").yellow(),
       style("outraegeous_soda.exe").red().bright(), style("http:").yellow(), style("directory-path").magenta().bright(),
@@ -217,19 +223,19 @@ impl SodaArgs {
     }
   }
 
-  pub fn compare_status_code(request: &String, status: StatusCode) -> () {
+  pub fn compare_status_code(request: &String, status: StatusCode, len: &u64) -> () {
     match status {
-      StatusCode::OK =>                        { println!("{request} -- {}", style(status).green().bright()); }
-      StatusCode::ACCEPTED =>                  { println!("{request} -- {}", style(status).green().bright()); }
-      StatusCode::BAD_GATEWAY =>               { println!("{request} -- {}", style(status).red().bright());   }
-      StatusCode::BAD_REQUEST =>               { println!("{request} -- {}", style(status).red().bright());   }
-      StatusCode::EXPECTATION_FAILED =>        { println!("{request} -- {}", style(status).red().bright());   }
-      StatusCode::FAILED_DEPENDENCY =>         { println!("{request} -- {}", style(status).red().bright());   }
-      StatusCode::HTTP_VERSION_NOT_SUPPORTED =>{ println!("{request} -- {}", style(status).red().bright());   }
-      StatusCode::NOT_FOUND =>                 { println!("{request} -- {}", style(status).red().bright());   }
-      StatusCode::INTERNAL_SERVER_ERROR =>     { println!("{request} -- {}", style(status).red().bright());   }
-      StatusCode::GATEWAY_TIMEOUT =>           { println!("{request} -- {}", style(status).red().bright());   }
-      _ =>                                     { println!("{request} -- {}", style(status).cyan());           }
+      StatusCode::OK =>                        { println!("{request} -- {} -- {}", style(status).green().bright(), style(len).cyan()); }
+      StatusCode::ACCEPTED =>                  { println!("{request} -- {} -- {}", style(status).green().bright(), style(len).cyan()); }
+      StatusCode::BAD_GATEWAY =>               { println!("{request} -- {} -- {}", style(status).red().bright(), style(len).cyan());   }
+      StatusCode::BAD_REQUEST =>               { println!("{request} -- {} -- {}", style(status).red().bright(), style(len).cyan());   }
+      StatusCode::EXPECTATION_FAILED =>        { println!("{request} -- {} -- {}", style(status).red().bright(), style(len).cyan());   }
+      StatusCode::FAILED_DEPENDENCY =>         { println!("{request} -- {} -- {}", style(status).red().bright(), style(len).cyan());   }
+      StatusCode::HTTP_VERSION_NOT_SUPPORTED =>{ println!("{request} -- {} -- {}", style(status).red().bright(), style(len).cyan());   }
+      StatusCode::NOT_FOUND =>                 { println!("{request} -- {} -- {}", style(status).red().bright(), style(len).cyan());   }
+      StatusCode::INTERNAL_SERVER_ERROR =>     { println!("{request} -- {} -- {}", style(status).red().bright(), style(len).cyan());   }
+      StatusCode::GATEWAY_TIMEOUT =>           { println!("{request} -- {} -- {}", style(status).red().bright(), style(len).cyan());   }
+      _ =>                                     { println!("{request} -- {} -- {}", style(status).cyan(), style(len).cyan());           }
     }
   }
 
@@ -244,8 +250,10 @@ impl SodaArgs {
     let verbose = self.verbose.clone();
     let timeout = self.timeout.clone();
     let html = self.htmlbody.clone();
+
     let mut output = "".to_owned();
     let status_codes = self.get_status_codes();
+    let length_values = self.get_length_values();
 
     match self.output.clone() {
       Some(s) => { output.push_str(s.as_str()); },
@@ -254,7 +262,6 @@ impl SodaArgs {
     
     // Create the thread.
     let handle = thread::spawn(move || {
-      let c_sender = sender.clone();
       let mut u8_buffer = U8FixedBuffer::new();            // Stores data to be logged.
 
       let slices: Vec<&str> = split_wordlist.split(" ").collect();        // Create array of slices.
@@ -285,12 +292,29 @@ impl SodaArgs {
 
         match Self::get(request.as_str(), timeout) {                 // Sends the GET reuqest.
           Ok(s) => {
+            let mut resp_len: u64 = 0;
             let status = s.status();
 
+            if let Some(length) = s.content_length().clone() {
+              resp_len = length;
+            }
+
             if debug == false {
+              
+
               for i in status_codes.clone() {
                 if status.clone() == i {
-                  Self::compare_status_code(&request, i);
+
+                  let mut print_code = true;
+                  for i in length_values.clone() {
+                    if resp_len == i {
+                      print_code = false;
+                    }
+                  }
+
+                  if print_code == true {
+                    Self::compare_status_code(&request, i, &resp_len);
+                  }
                   
                   if output.len().clone() > 0 {                              
                     u8_buffer.push_str(format!("{} -- {}\n", request, status).as_str());
@@ -300,7 +324,7 @@ impl SodaArgs {
             }
 
             if verbose == true {                                         // Enable debugging to print everything.
-              Self::compare_status_code(&request, status);  
+              Self::compare_status_code(&request, status, &resp_len);  
             }
 
             if html == true {                                            // Enable this flag to get the html body.
@@ -408,12 +432,17 @@ impl SodaArgs {
 
       match Self::get(request.as_str(), timeout) {                 // Sends the GET reuqest.
         Ok(s) => {
+          let mut resp_len: u64 = 0;
           let status = s.status();
           
+          if let Some(length) = s.content_length().clone() {
+            resp_len = length;
+          }
+
           if debug == false {
             for i in status_codes.clone() {
               if status.clone() == i {
-                Self::compare_status_code(&request, i);
+                Self::compare_status_code(&request, i, &resp_len);
                 
                 if output.len().clone() > 0 {                              
                   u8_buffer.push_str(format!("{} -- {}\n", request, status).as_str());
@@ -423,7 +452,7 @@ impl SodaArgs {
           }
 
           if verbose == true {                                         // Enable debugging to print everything.
-            Self::compare_status_code(&request, status);  
+            Self::compare_status_code(&request, status, &resp_len);  
           }
 
           if html == true {                                            // Enable this flag to get the html body.
@@ -616,7 +645,11 @@ impl SodaArgs {
       );
     }
 
-    thread::sleep(Duration::from_secs(1));
+    println!(
+      "{}: <Request> -- <{}> -- <{}>", style("format").yellow().bright(),
+      style("Status Code").green().bright(), style("Length").cyan()
+    );
+    thread::sleep(Duration::from_secs(4));
     let (sender, recv) = mpsc::channel::<ThreadMessage>();
 
     // Allocates memory to string that holds 20 or less elements
@@ -741,41 +774,6 @@ impl SodaArgs {
     println!("Done!");
   }
 
-  // /**Function waits on a thread to finish before joining the output into the main thread.
-  //  * Params:
-  //  *  handle: JoinHandle<()> {The handle to thread.}
-  //  *  debug:  bool           {Display information about threads if enabled.}
-  //  * Returns bool.
-  //  */
-  // #[allow(unused_assignments)]
-  // pub fn wait_on_threads(handle: JoinHandle<()>, debug: bool) -> bool {
-  //   let mut out = false;
-  //   let mut time_counter: usize = 0;
-
-  //   loop {
-  //     if time_counter >= 60 { time_counter = 0; }
-      
-  //     if handle.is_finished() == true {
-  //       out = true;
-  //       break;
-  //     }
-
-  //     thread::sleep(Duration::from_secs(1));
-  //     time_counter += 1;
-      
-  //     if debug == true && time_counter >= 60 { println!("Waiting on threads..."); }
-  //   }
-
-  //   match handle.join() {
-  //     Ok(_) => {}
-  //     Err(_) => {}
-  //   }
-
-  //   if debug == true { println!("thread finished"); }
-    
-  //   out
-  // }
-
   /**Function displays 256 bytes of the wordlist before it has been split into an array and after.
    * Params:
    *  &self
@@ -875,4 +873,49 @@ impl SodaArgs {
 
     out
   }
+
+  pub fn get_length_values(&self) -> Vec<u64> {
+    let mut values: Vec<u64> = Default::default();
+    let mut lens = String::from("");
+
+    if let Some(len) = self.ignore_len.clone() {
+      lens.push_str(len.as_str());
+    }
+
+    let c_lens = lens.clone();
+    let success = self.check_correct_split(c_lens, ",");
+    
+    if success == true {
+      let split: Vec<&str> = lens.split(",").collect();
+      
+      for i in split {
+        match i.parse::<u64>() {
+          Ok(s) => { values.push(s); },
+          Err(_) => {}
+        }
+      }
+    }
+
+    else {
+      if lens.len() > 0 {
+        let slice = lens.as_str();
+        match slice.parse::<u64>() {
+          Ok(s) => { values.push(s); },
+          Err(e) => {}
+        }
+      }
+    }
+
+    values
+  }
 }
+
+
+
+
+
+
+
+
+
+
