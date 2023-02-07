@@ -725,56 +725,56 @@ impl SodaArgs {
         
         match i.join() {
           Ok(_) => {
-            println!(
-              "{} {} {:?}", 
-              style("Debug =>").red().bright(), style("joining thread to the main thread").yellow(),
-              style(id).cyan()
-            );
+            if self.debug.clone() == true {
+              println!(
+                "{} {} {:?}", 
+                style("Debug =>").red().bright(), style("joining thread to the main thread").yellow(),
+                style(id).cyan()
+              );
+            }
           },
           Err(e) => {}
         }
-
-        // Self::wait_on_threads(i, self.debug.clone());
       } 
     }
 
     println!("Done!");
   }
 
-  /**Function waits on a thread to finish before joining the output into the main thread.
-   * Params:
-   *  handle: JoinHandle<()> {The handle to thread.}
-   *  debug:  bool           {Display information about threads if enabled.}
-   * Returns bool.
-   */
-  #[allow(unused_assignments)]
-  pub fn wait_on_threads(handle: JoinHandle<()>, debug: bool) -> bool {
-    let mut out = false;
-    let mut time_counter: usize = 0;
+  // /**Function waits on a thread to finish before joining the output into the main thread.
+  //  * Params:
+  //  *  handle: JoinHandle<()> {The handle to thread.}
+  //  *  debug:  bool           {Display information about threads if enabled.}
+  //  * Returns bool.
+  //  */
+  // #[allow(unused_assignments)]
+  // pub fn wait_on_threads(handle: JoinHandle<()>, debug: bool) -> bool {
+  //   let mut out = false;
+  //   let mut time_counter: usize = 0;
 
-    loop {
-      if time_counter >= 60 { time_counter = 0; }
+  //   loop {
+  //     if time_counter >= 60 { time_counter = 0; }
       
-      if handle.is_finished() == true {
-        out = true;
-        break;
-      }
+  //     if handle.is_finished() == true {
+  //       out = true;
+  //       break;
+  //     }
 
-      thread::sleep(Duration::from_secs(1));
-      time_counter += 1;
+  //     thread::sleep(Duration::from_secs(1));
+  //     time_counter += 1;
       
-      if debug == true && time_counter >= 60 { println!("Waiting on threads..."); }
-    }
+  //     if debug == true && time_counter >= 60 { println!("Waiting on threads..."); }
+  //   }
 
-    match handle.join() {
-      Ok(_) => {}
-      Err(_) => {}
-    }
+  //   match handle.join() {
+  //     Ok(_) => {}
+  //     Err(_) => {}
+  //   }
 
-    if debug == true { println!("thread finished"); }
+  //   if debug == true { println!("thread finished"); }
     
-    out
-  }
+  //   out
+  // }
 
   /**Function displays 256 bytes of the wordlist before it has been split into an array and after.
    * Params:
