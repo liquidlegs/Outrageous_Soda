@@ -3,9 +3,8 @@ use std::{
   io::{Write, BufReader, BufRead, Error as IoError, ErrorKind},
   fs::OpenOptions,
   thread,
-  thread::JoinHandle,
   borrow::Cow,
-  sync::mpsc::{Sender, Receiver},
+  sync::mpsc::Sender,
   sync::mpsc,
 };
 
@@ -228,6 +227,16 @@ impl SodaArgs {
     }
   }
 
+  /**Function displays the request, status and length of the response.
+   * The colour of the line that is displayed is determined by the status of the code.
+   * Good requests are displayed in green, bad requests are displayed in red and requests
+   * that are neither good nor bad are displayed in blue.
+   * Params:
+   *  request: &String      {The url request}
+   *  status:  StatusCode   {The status code of the request}
+   *  len:     &u64         {The length of the response}
+   * Returns nothing.
+   */
   pub fn compare_status_code(request: &String, status: StatusCode, len: &u64) -> () {
     match status {
       StatusCode::OK =>                        { println!("{request} -- {} -- {}", style(status).green().bright(), style(len).cyan()); }
@@ -244,10 +253,11 @@ impl SodaArgs {
     }
   }
 
-  /**Function sends a simple get request and displays the server repsonse to the screen.
+  /**Function sends a simple get request and displays the server response to the screen.
  * Params:
  *  &self
- *  split_wordlist: &str {A chunk of the input wordlist that be handed off to a thread.}
+ *  split_wordlist: &str              {A chunk of the input wordlist that be handed off to a thread.}
+ *  sender:         Sender<String>    {The sender channel tells the main thread when it is finished and can be joined to the main thread}
  * Returns JoinHandle<()>
  */
   pub fn thread_get_request(&self, split_wordlist: String, sender: Sender<ThreadMessage>) -> thread::JoinHandle<()> {
@@ -361,7 +371,7 @@ impl SodaArgs {
               Ok(_) => {},
               Err(e) => {
                 if debug == true {
-                  println!("{}: {e}", style("Error").red().bright());;
+                  println!("{}: {e}", style("Error").red().bright());
                 }
               }
             }
@@ -387,7 +397,9 @@ impl SodaArgs {
       match sender.send(ThreadMessage::Finished) {
         Ok(_) => {},
         Err(e) => {
-          println!("{e}");
+          if debug == true {
+            println!("{}: {e}", style("Error").red().bright());
+          }
         }
       }
     });
@@ -399,6 +411,12 @@ impl SodaArgs {
     handle
   }
 
+  /**Function sends a get request and displays the result to the screen.
+   * Params:
+   *  &self,
+   *  split_wordlist: String {The wordlist that will be used to fuzz directories or paremeters}
+   * Returns nothing
+   */
   pub fn standard_get_request(&self, split_wordlist: String) -> () {
     let debug = self.debug.clone();
     let verbose = self.verbose.clone();
@@ -567,9 +585,10 @@ impl SodaArgs {
     (utf8_string, total_bytes_read)
   }
 
-    /**Function makes get requests depending on the base url and the contents of the supplied wordlist.
+    /**Function sets up the stage for the program to begin fuzzing directories or parameters
+     * using either a single thread, or multiple threads.
    * Params:
-   *  set: Settings {The settings or command line arguments that the user supplied.}
+   *  &self
    * Returns nothing.
    */
   #[allow(unused_assignments)]
@@ -580,7 +599,7 @@ impl SodaArgs {
     let file_contents = self.parse_wordlist();                                   // Gets the contents of the wordlist
     if file_contents.1 >= LARGE_FILE {
       println!(
-        "{}: {} {}", 
+        "{}: {} {}\n", 
         style("Warning").yellow().bright(), style("word-list is larger than 50MB.").cyan(),
         style("Performance may be slow...").red().bright()
       );
@@ -648,14 +667,14 @@ impl SodaArgs {
     if fuzz_type == Fuzz::DirectoryPath {
       if ext_string_len == 0 {
         println!(
-          "{} {} {}", style("Generating").yellow(),  
+          "{} {} {}\n", style("Generating").yellow(),  
           style(sl_array_len.clone()).cyan(), style("test cases...").yellow()
         );
       }
       
       else {
         println!(
-          "{} {} {}", style("Generating").yellow(),  
+          "{} {} {}\n", style("Generating").yellow(),  
           style(sl_array_len.clone()*ext_string_len.clone()).cyan(), style("test cases...").yellow()
         );
       }
@@ -663,13 +682,13 @@ impl SodaArgs {
 
     if fuzz_type == Fuzz::Parameter {
       println!(
-        "{} {} {}", style("Generating").yellow(),  
+        "{} {} {}\n", style("Generating").yellow(),  
         style(sl_array_len.clone()).cyan(), style("test cases...").yellow()
       );
     }
 
     println!(
-      "{}: <Request> -- <{}> -- <{}>", style("format").yellow().bright(),
+      "{}: <Request> -- <{}> -- <{}>\n", style("format").yellow().bright(),
       style("Status Code").green().bright(), style("Length").cyan()
     );
     thread::sleep(Duration::from_secs(4));
@@ -756,7 +775,9 @@ impl SodaArgs {
 
           },
           Err(e) => {
-            println!("{e}");
+            if self.debug.clone() == true {
+              println!("{}: {e}", style("Error").red().bright());
+            }
             
             if retry_counter >= 10 {
               break;
