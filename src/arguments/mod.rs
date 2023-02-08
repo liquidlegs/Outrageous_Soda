@@ -61,6 +61,10 @@ pub struct SodaArgs {
   #[clap(short = 'H', long, default_value_if("htmlbody", Some("false"), Some("true")), min_values(0))]
   pub htmlbody: bool,
 
+  #[clap(long = "nt-errs", default_value_if("nt-errs", Some("false"), Some("true")), min_values(0))]
+  /// Does not show socket timeout errors
+  pub no_timeout_errs: bool,
+
   /// File Extensions
   #[clap(short, long)]
   pub ext: Option<String>,
@@ -108,6 +112,7 @@ pub fn display_help() -> () {
         {}, --{}     <INT>         The number of threads you wish to use to process requests - [default:10]
         {}, --{}      <CODES[...]>  Specify the status codes to be displayed - [default: 200]
         {}, --{}  <LEN[...]>    Do not display responses equal to the specified length
+            --{}                   Disables socket timeout errors from being displayed
         {}, --{}                   Show all status codes
         {}, --{}                   Print version information
         
@@ -121,7 +126,7 @@ pub fn display_help() -> () {
       style("htmlbody").cyan(), style("-h").green().bright(), style("help").cyan(), style("-o").green().bright(), style("output").cyan(), 
       style("-t").green().bright(), style("timeout").cyan(), style("-T").green().bright(), style("threads").cyan(), 
       style("-s").green().bright(), style("scodes").cyan(), style("-i").green().bright(), 
-      style("ignore-len").cyan(), style("-v").green().bright(), 
+      style("ignore-len").cyan(), style("nt-errs").cyan(), style("-v").green().bright(), 
       style("verbose").cyan(), style("-V").green().bright(), style("version").cyan(), style("EXAMPLES").yellow().bright(),
       style("outraegeous_soda.exe").red().bright(), style("http:").yellow(), style("username").cyan(), style("password").magenta().bright(),
       style("parameter").magenta().bright(), style("debug").cyan(), style("-T").green().bright(), style("30").yellow(),
@@ -250,6 +255,7 @@ impl SodaArgs {
     let verbose = self.verbose.clone();
     let timeout = self.timeout.clone();
     let html = self.htmlbody.clone();
+    let no_timeout_err = self.no_timeout_errs.clone();
 
     let mut output = "".to_owned();
     let status_codes = self.get_status_codes();
@@ -339,20 +345,24 @@ impl SodaArgs {
             match sender.send(ThreadMessage::Continue) {
               Ok(_) => {},
               Err(e) => {
-                println!("{e}");
+                if debug == true {
+                  println!("{}: {e}", style("Error").red().bright());;
+                }
               }
             }
             
           },
           Err(e) => {
-            if e.is_builder() != true {
-              println!("\n{}\n__________________________________________________", e);
+            if e.is_builder() != true && no_timeout_err == false {
+              println!("\n{}\n{}", style(e).red().bright(), style("__________________________________________________").cyan());
             }
 
             match sender.send(ThreadMessage::Continue) {
               Ok(_) => {},
               Err(e) => {
-                println!("{e}");
+                if debug == true {
+                  println!("{}: {e}", style("Error").red().bright());;
+                }
               }
             }
           }
@@ -394,8 +404,11 @@ impl SodaArgs {
     let verbose = self.verbose.clone();
     let timeout = self.timeout.clone();
     let html = self.htmlbody.clone();
+    let no_timeout_err = self.no_timeout_errs.clone();
+
     let mut output = "".to_owned();
     let status_codes = self.get_status_codes();
+    let length_values = self.get_length_values();
 
     match self.output.clone() {
       Some(s) => { output.push_str(s.as_str()); },
@@ -442,7 +455,17 @@ impl SodaArgs {
           if debug == false {
             for i in status_codes.clone() {
               if status.clone() == i {
-                Self::compare_status_code(&request, i, &resp_len);
+                
+                let mut print_code = true;
+                  for i in length_values.clone() {
+                    if resp_len == i {
+                      print_code = false;
+                    }
+                  }
+                
+                if print_code == true {
+                  Self::compare_status_code(&request, i, &resp_len);
+                }
                 
                 if output.len().clone() > 0 {                              
                   u8_buffer.push_str(format!("{} -- {}\n", request, status).as_str());
@@ -465,7 +488,7 @@ impl SodaArgs {
           }
         },
         Err(e) => {
-          if e.is_builder() != true {
+          if e.is_builder() != true && no_timeout_err == false {
             println!("\n{}\n__________________________________________________", e);
           }
         }
@@ -820,6 +843,11 @@ impl SodaArgs {
     out
   }
 
+  /**Function parses status codes specified by the user and returns a vec
+   * Params:
+   *  &self
+   * Returns Vec<StatusCode>
+   */
   pub fn get_status_codes(&self) -> Vec<StatusCode> {
     let mut values: Vec<u16> = Default::default();
     let mut codes = String::from("");
@@ -874,6 +902,11 @@ impl SodaArgs {
     out
   }
 
+  /**Function parses ;ength values provided by the user and returns a u64 vec
+   * Params:
+   *  &self
+   * Return Vec<u64>
+   */
   pub fn get_length_values(&self) -> Vec<u64> {
     let mut values: Vec<u64> = Default::default();
     let mut lens = String::from("");
@@ -909,13 +942,3 @@ impl SodaArgs {
     values
   }
 }
-
-
-
-
-
-
-
-
-
-
