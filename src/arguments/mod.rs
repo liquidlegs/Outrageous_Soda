@@ -721,18 +721,14 @@ impl SodaArgs {
           let exts: Vec<&str> = ext_string.split(",").collect();
           
           for i in exts {                         
-            temp_string.push_str(url);          // https://address
-            temp_string.push_str(chunk);        // + word
-            temp_string.push('.');                  // + '.'
-            temp_string.push_str(i);            // + extension
-            temp_string.push(' ');                  // + ' '
+            // temp_string += "http://url + word + '.' + "ext" "
+            temp_string.push_str(format!("{url}{chunk}.{i} ").as_str())
           }
   
         }
-        else {
-          temp_string.push_str(url);
-          temp_string.push_str(chunk);
-        }
+
+        temp_string.push_str(url);
+        temp_string.push_str(chunk);
 
       }
       else if fuzz_type == Fuzz::Parameter {
