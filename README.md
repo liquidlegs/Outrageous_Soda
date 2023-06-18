@@ -1,4 +1,4 @@
-# Outrageous SODA
+# Outrageous Soda
 
 Outrageous SODA is a simple web fuzzer that can guess URL directory names and fuzz URL parameters.
 The project currently offers the following features.
